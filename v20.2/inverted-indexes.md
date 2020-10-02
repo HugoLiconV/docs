@@ -9,7 +9,8 @@ Inverted indexes store mappings from values within a container column (such as a
 CockroachDB stores the contents of the following data types in inverted indexes:
 
 - [JSONB](jsonb.html)
--  [Arrays](array.html)
+- [Arrays](array.html)
+- [Spatial data (`GEOMETRY` and `GEOGRAPHY`)](spatial-indexes.html)
 
 {{site.data.alerts.callout_success}}For a hands-on demonstration of using an inverted index to improve query performance on a <code>JSONB</code> column, see the <a href="demo-json-support.html">JSON tutorial</a>.{{site.data.alerts.end}}
 
@@ -141,6 +142,14 @@ If you require comparisons using [`<`](functions-and-operators.html#operator-les
 
 - "is contained by": [`<@`](functions-and-operators.html#operator-is-contained-by)
 - "contains": [`@>`](functions-and-operators.html#operator-contains)
+
+#### Spatial indexes
+
+Inverted indexes on `GEOMETRY` and `GEOGRAPHY` columns support the following comparison operators:
+
+XXX: Find out what comparison operators are supported
+
+For more information about spatial indexes, including examples, see [Spatial Indexes](spatial-indexes.html).
 
 ## Example
 

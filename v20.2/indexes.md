@@ -63,6 +63,12 @@ To create a hash-sharded index, set the `experimental_enable_hash_sharded_indexe
 Hash-sharded indexes cannot be [interleaved](interleave-in-parent.html).
 {{site.data.alerts.end}}
 
+## Spatial indexes
+
+{% include {{page.version.version}}/sql/spatial-support-new.md %}
+
+For more information about spatial indexes, see [Spatial Indexes](spatial-indexes.html).
+
 ## Best practices
 
 We recommend creating indexes for all of your common queries. To design the most useful indexes, look at each query's `WHERE` and `SELECT` clauses, and create indexes that:
@@ -145,6 +151,7 @@ However, if we store `col3` in the index, the index join is no longer necessary.
 ## See also
 
 - [Inverted Indexes](inverted-indexes.html)
+- [Spatial Indexes](spatial-indexes.html)
 - [SQL Performance Best Practices](performance-best-practices-overview.html)
 - [Select from a specific index](select-clause.html#select-from-a-specific-index)
 - [`CREATE INDEX`](create-index.html)

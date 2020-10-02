@@ -4,7 +4,9 @@ summary: CockroachDB has special support for efficiently storing and querying sp
 toc: true
 ---
 
-<span class="version-tag">New in v20.2</span>: CockroachDB has special support for efficiently storing and querying spatial data. Supported spatial data types include:
+{% include {{page.version.version}}/sql/spatial-support-new.md %}
+
+Supported spatial data types include:
 
 - Geometric objects such as points, lines, paths, and polygons in 2-dimensional space. These are projected onto the flat surface of a plane and are represented in SQL by the `GEOMETRY` data type.
 

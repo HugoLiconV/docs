@@ -6,7 +6,8 @@ toc: true
 
 <a name="linux"></a>
 <a name="mac"></a>
-<span class="version-tag">New in v20.2</span>: CockroachDB has special support for efficiently storing and querying spatial data.
+
+{% include {{page.version.version}}/sql/spatial-support-new.md %}
 
 This page has instructions for installing CockroachDB Spatial on Mac and Linux.
 

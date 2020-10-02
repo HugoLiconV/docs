@@ -2004,20 +2004,26 @@
       },
       {
     		"title": "Spatial Features",
-    		  "items": [
+    		"items": [
     		      {
     			  "title": "Overview",
     			  "urls": [
     			      "/${VERSION}/spatial-features.html"
     			  ]
-	      },
-	      {
-  			  "title": "Spatial and GIS Glossary of Terms",
-  			  "urls": [
-  			      "/${VERSION}/spatial-glossary.html"
-  			  ]
-	      }
-	]
+         	   },
+                  {
+                       "title": "Spatial and GIS Glossary of Terms",
+                       "urls": [
+                           "/${VERSION}/spatial-glossary.html"
+                       ]
+                   },
+                  {
+                       "title": "Spatial Indexes",
+                       "urls": [
+                           "/${VERSION}/spatial-indexes.html"
+                       ]
+                   }
+	        ]
       },
       {
     		"title": "Performance Optimization",

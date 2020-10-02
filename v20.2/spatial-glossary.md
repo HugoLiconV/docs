@@ -26,6 +26,10 @@ This page is provided for reference purposes only. The inclusion of a term in th
 
 - _Cartographic projection_: A cartographic projection, or map projection, is the process used to represent 3-dimensional (or higher) data on a 2-dimensional surface. This is usually related to how we might display 3-dimensional shapes represented in a database by the [`GEOGRAPHY` data type](#geography) on the surface of a map, which is a flat plane. For more information, see the GIS Lounge article [What is a Map Projection?](https://www.gislounge.com/map-projection/) by Caitlin Dempsey.
 
+<a name="covering"></a>
+
+- _Covering_: The covering of a shape _A_ is a set of locations (in CockroachDB, [S2 cell IDs](#s2)) that comprise another shape _B_ such that no points of _A_ lie to the outside of _B_.
+
 <a name="geocoder"></a>
 
 - _Geocoder_: Takes an address or the name of a place, and returns latitude and longitude coordinates. For more information, see [the wikipedia article on Geocoding](https://en.wikipedia.org/wiki/Geocoding).
@@ -167,6 +171,10 @@ This page is provided for reference purposes only. The inclusion of a term in th
 <a name="tiger"></a>
 
 - _TIGER_: The "Topographically Integrated Geographic Encoding and Referencing System" released by the [U.S. Census Bureau](https://www.census.gov/programs-surveys/geography/guidance/tiger-data-products-guide.html).
+
+<a name="s2"></a>
+
+- _S2_: The [S2 Geometry Library](http://s2geometry.io) is a C++ code library for doing spherical geometry.  It models a sphere using a [quadtree](https://en.wikipedia.org/wiki/Quadtree) "divide the space" approach, and is used by CockroachDB.
 
 ## Spatial objects
 

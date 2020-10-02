@@ -13,6 +13,7 @@ This documentation is still being worked on for the 20.2 release. For now, see t
 ## See also
 
 - [Working with Spatial Data](spatial-data.html)
+- [Spatial indexes](spatial-indexes.html)
 - [Spatial and GIS Glossary of Terms](spatial-glossary.html)
 - [Spatial functions](functions-and-operators.html#geospatial-functions)
 - [Migrate from Shapefiles](migrate-from-shapefiles.html)
