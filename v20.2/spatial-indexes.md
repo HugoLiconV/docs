@@ -35,11 +35,11 @@ CockroachDB uses the [S2 geometry library](https://s2geometry.io/) to divide the
 
 This is easier to understand with pictures.  At a high level, we enclose the sphere into a cube.  Each face of the cube is a square.  We then map from points on that square to points on the face of the sphere.  As you can see in the picture below, there is a projection that occurs.  In the picture, the lines entering from the left are "refracted" by the material of the cube face and are projected onto the surface of the sphere.  This projection reduces the distortion that would occur if the points on the cube face were projected directly onto the sphere in a straight line.
 
-<img src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-2d.png' | relative_url }}" alt="S2 Cubed Sphere - 2D">
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-2d.png' | relative_url }}" alt="S2 Cubed Sphere - 2D">
 
 Next let's expand the image to 3 dimensions, to show the cube and sphere more clearly.  Above, we mentioned that each cube face is mapped to a quadtree data structure.  The nodes of each quadtree are numbered using a Hilbert space-filling curve.  In the image below, you can imagine that the points on the Hilbert curve on the rear face of the cube are projected onto the sphere in the center.
 
-<img src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-3d.png' | relative_url }}" alt="S2 Cubed Sphere - 3D">
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-3d.png' | relative_url }}" alt="S2 Cubed Sphere - 3D">
 
 When indexing an object, a covering is computed using some number of the cells in the quadtree. The number of covering cells can vary per indexed object by passing special arguments to [`CREATE INDEX`](create-index.html) that tell CockroachDB how many levels of s2 cells to use.
 
