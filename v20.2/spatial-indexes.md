@@ -70,8 +70,6 @@ Next, let's expand the image to 3 dimensions, to show the cube and sphere more c
 
 <img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-3d.png' | relative_url }}" alt="S2 Cubed Sphere - 3D">
 
-XXX: YOU ARE HERE
-
 When you index a spatial object, a covering is computed using some number of the cells in the quadtree. The number of covering cells can vary per indexed object by passing special arguments to `CREATE INDEX` that tell CockroachDB how many levels of s2 cells to use.  For more information about these tuning parameters, see [Tuning spatial indexes](#tuning-spatial-indexes).
 
 ## Tuning spatial indexes
@@ -84,21 +82,89 @@ The size of the large index that is created for a tighter covering also matters 
 
 Let's look at a concrete example.
 
-XXX: YOU ARE HERE
-
-The following geometry object that describes a polygon whose vertices are some small cities in the Northeastern US:
+The following geometry object describes a `LINESTRING` whose vertices land on some small cities in the Northeastern US:
 
 ~~~
 'LINESTRING(-76.4955 42.4405,  -75.6608 41.4102,-73.5422 41.052, -73.929 41.707, -76.4955 42.4405)'
 ~~~
 
-The animated image below shows the s2 covering that is generated as we "turn up the dial" on the `s2_max_level` and `s2_max_cells` parameters, ranging them from 1 to 30:
+The animated image below shows the s2 covering that is generated as we "turn up the dial" on the `s2_max_level` and `s2_max_cells` parameters, iterating them up from 1 to 30:
 
 <img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-coverings.gif' | relative_url }}" alt="Animated GIF of S2 Coverings - Levels 1 to 30">
 
-Here are the same images, presented in a grid.  You can see that as we turn up the `s2_max_cells` parameter, more work is done to discover a tighter and tighter covering (using fewer and smaller cells):
+Here are the same images, presented in a grid.  As we turn up the `s2_max_cells` parameter, more work is done by CockroachDB to discover a tighter and tighter covering (that is, a covering using fewer and smaller cells).  Note that this means that the resulting indexes grow larger and larger.
 
 <img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-coverings-tiled.png' | relative_url }}" alt="Static image of S2 Coverings - Levels 1 to 30">
+
+The following keyword options are supported for both `CREATE INDEX` and the [built-in function](functions-and-operators.html#geospatial-functions) `st_s2covering`.  The latter is useful for seeing what kinds of coverings would be generated in an index if you created an index with various tuning parameters set.
+
+| Option         | Default value | Meaning                                                                                                                                                                |
+|----------------+---------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| s2_level_mod   |             1 |                                                                                                                                                                        |
+| s2_max_level   |            30 |                                                                                                                                                                        |
+| s2_max_cells   |             4 | A limit on how much work is done exploring the possible covering.  Defaults to 8.  You may want to use higher values for odd-shaped regions such as skinny rectangles. |
+| geometry_min_x |               |                                                                                                                                                                        |
+| geometry_max_x |               |                                                                                                                                                                        |
+| geometry_min_y |               |                                                                                                                                                                        |
+| geometry_max_y |               |                                                                                                                                                                        |
+
+### Example - tuning index creation
+
+Here is an example showing all of the options being set on `CREATE INDEX`:
+
+{% include copy-clipboard.html %}
+~~~ sql
+CREATE INVERTED INDEX geom_idx_2
+	ON some_spatial_table (geom)
+	WITH (
+		s2_max_cells = 20, s2_max_level = 12, s2_level_mod = 3, geometry_min_x = -180, geometry_max_x = 180, geometry_min_y = -180, geometry_max_y = 180
+	)
+~~~
+
+### Example - viewing an object's s2 covering
+
+Here is an example showing how to pass the options to `st_s2covering`.  It generates [GeoJSON](https://geojson.org) output showing both a shape and the s2 covering that would be generated for that shape in your index, if you passed the same parameters to `CREATE INDEX`.  You can paste this output into [geojson.io](http://geojson.io) to see what it looks like.
+
+{% include copy-clipboard.html %}
+~~~ sql
+CREATE TABLE tmp (id INT8, geom GEOMETRY);
+
+INSERT
+INTO
+	tmp (id, geom)
+VALUES
+	(
+		1,
+		st_geomfromtext(
+			'LINESTRING(-76.8261 42.1727,  -75.6608 41.4102,-73.5422 41.052, -73.929 41.707,  -76.8261 42.1727)'
+		)
+	);
+
+INSERT
+INTO
+	tmp (id, geom)
+VALUES
+	(
+		2,
+		st_s2covering(
+			st_geomfromtext(
+				'LINESTRING(-76.8261 42.1727,  -75.6608 41.4102,-73.5422 41.052, -73.929 41.707,  -76.8261 42.1727)'
+			),
+			's2_max_cells=20,s2_max_level=12,s2_level_mod=3,geometry_min_x=-180,geometry_max_x=180,geometry_min_y=-180,geometry_max_y=180'
+		)
+	);
+
+SELECT st_asgeojson(st_collect(geom)) FROM tmp;
+~~~
+
+{% include copy-clipboard.html %}
+~~~ json
+{"type":"GeometryCollection","geometries":[{"type":"LineString","coordinates":[[-76.8261,42.1727],[-75.6608,41.4102],[-73.5422,41.052],[-73.929,41.707],[-76.8261,42.1727]]},{"type":"MultiPolygon","coordinates":[[[[-76.904296875,42.099609375],[-76.81640625,42.099609375],[-76.81640625,42.1875],[-76.904296875,42.1875],[-76.904296875,42.099609375]]],[[[-76.81640625,42.099609375],[-76.728515625,42.099609375],[-76.728515625,42.1875],[-76.81640625,42.1875],[-76.81640625,42.099609375]]],[[[-76.728515625,42.099609375],[-76.640625,42.099609375],[-76.640625,42.1875],[-76.728515625,42.1875],[-76.728515625,42.099609375]]],[[[-76.728515625,42.01171875],[-76.640625,42.01171875],[-76.640625,42.099609375],[-76.728515625,42.099609375],[-76.728515625,42.01171875]]],[[[-76.640625,41.484375],[-75.9375,41.484375],[-75.9375,42.1875],[-76.640625,42.1875],[-76.640625,41.484375]]],[[[-74.53125,40.78125],[-73.828125,40.78125],[-73.828125,41.484375],[-74.53125,41.484375],[-74.53125,40.78125]]],[[[-73.828125,40.78125],[-73.125,40.78125],[-73.125,41.484375],[-73.828125,41.484375],[-73.828125,40.78125]]],[[[-73.828125,41.484375],[-73.740234375,41.484375],[-73.740234375,41.572265625],[-73.828125,41.572265625],[-73.828125,41.484375]]],[[[-74.53125,41.484375],[-73.828125,41.484375],[-73.828125,42.1875],[-74.53125,42.1875],[-74.53125,41.484375]]],[[[-75.234375,41.484375],[-74.53125,41.484375],[-74.53125,42.1875],[-75.234375,42.1875],[-75.234375,41.484375]]],[[[-75.234375,40.78125],[-74.53125,40.78125],[-74.53125,41.484375],[-75.234375,41.484375],[-75.234375,40.78125]]],[[[-75.322265625,41.30859375],[-75.234375,41.30859375],[-75.234375,41.396484375],[-75.322265625,41.396484375],[-75.322265625,41.30859375]]],[[[-75.41015625,41.30859375],[-75.322265625,41.30859375],[-75.322265625,41.396484375],[-75.41015625,41.396484375],[-75.41015625,41.30859375]]],[[[-75.5859375,41.396484375],[-75.498046875,41.396484375],[-75.498046875,41.484375],[-75.5859375,41.484375],[-75.5859375,41.396484375]]],[[[-75.5859375,41.30859375],[-75.498046875,41.30859375],[-75.498046875,41.396484375],[-75.5859375,41.396484375],[-75.5859375,41.30859375]]],[[[-75.498046875,41.30859375],[-75.41015625,41.30859375],[-75.41015625,41.396484375],[-75.498046875,41.396484375],[-75.498046875,41.30859375]]],[[[-75.673828125,41.396484375],[-75.5859375,41.396484375],[-75.5859375,41.484375],[-75.673828125,41.484375],[-75.673828125,41.396484375]]],[[[-75.76171875,41.396484375],[-75.673828125,41.396484375],[-75.673828125,41.484375],[-75.76171875,41.484375],[-75.76171875,41.396484375]]],[[[-75.849609375,41.396484375],[-75.76171875,41.396484375],[-75.76171875,41.484375],[-75.849609375,41.484375],[-75.849609375,41.396484375]]],[[[-75.9375,41.484375],[-75.234375,41.484375],[-75.234375,42.1875],[-75.9375,42.1875],[-75.9375,41.484375]]]]}]}
+~~~
+
+When you paste this output into [geojson.io](http://geojson.io), it generates the picture below, which shows both the `LINESTRING` and its S2 covering based on the options you passed to `st_s2covering`.
+
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-linestring-example-covering.png' | relative_url }}" alt="S2 LINESTRING example covering">
 
 ## Index storage
 
@@ -113,11 +179,17 @@ As such, a row in the index might look
 
 To control how many duplicates occur in the list of values (and thus how many false positives will be returned by an index lookup), you can configure the index to use more or fewer s2 cells with the `s2_max_level` and `s2_max_cells` arguments to `CREATE INDEX` (see [Spatial index tuning](#spatial-index-tuning) below).
 
+{{site.data.alerts.callout_danger}}
+CockroachDB does not support indexing geospatial types in default [primary keys](primary-key.html) and [unique secondary indexes](indexes.html#unique-secondary-indexes). This is because we will not be able to match the PostGIS definition as it's based on a hash of its internal data structure, which means we will not be able to be a "drop-in" replacement here.
+{{site.data.alerts.end}}
+
+XXX: YOU ARE HERE
+
 ## Examples
 
 ### Create a `GEOGRAPHY` index
 
-XXX: write this section
+XXX: WRITE ME
 
 ### Create a `GEOMETRY` index
 
@@ -127,28 +199,6 @@ To create a spatial index on a `GEOMETRY` data type, enter the following stateme
 ~~~ sql
 CREATE INDEX geom_idx_1 ON some_spatial_table USING GIST(geom) WITH (s2_level_mod=3);
 ~~~
-
-### Spatial index tuning
-
-The following keyword options to [`CREATE INDEX`](create-index.html) are supported:
-
-| Option         | Default value | Meaning                                                                                                                                                                |
-|----------------+---------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| s2_level_mod   |             1 |                                                                                                                                                                        |
-| s2_max_level   |            30 |                                                                                                                                                                        |
-| s2_max_cells   |             4 | A limit on how much work is done exploring the possible covering.  Defaults to 8.  You may want to use higher values for odd-shaped regions such as skinny rectangles. |
-| geometry_min_x |               |                                                                                                                                                                        |
-| geometry_max_x |               |                                                                                                                                                                        |
-| geometry_min_y |               |                                                                                                                                                                        |
-| geometry_max_y |               |                                                                                                                                                                        |
-
-Here is an example showing all of the options being set:
-
-{% include copy-clipboard.html %}
-~~~ sql
-CREATE INDEX geom_idx_2 ON some_spatial_table USING GIST(geom) WITH ('s2_max_cells=20,s2_max_level=12,s2_level_mod=3,geometry_min_x=-180,geometry_max_x=180,geometry_min_y=-180,geometry_max_y=180');
-~~~
-
 
 {% include copy-clipboard.html %}
 ~~~ sql
