@@ -9,58 +9,96 @@ toc: true
 This page describes CockroachDB's approach to indexing spatial data, including:
 
 - What spatial indexing is
-- How spatial indexing works
+- How it works
 
 ## What is a spatial index?
 
 A spatial index is just like any other [index](indexes.html).  Its purpose in life is to improve your database's performance by helping SQL locate data without having to look through every row of a table.
 
-Spatial indexes are mainly used for the same tasks as any other index type, namely:
+Spatial indexes are used for the same tasks as any other index type:
 
-- Fast filtering of objects based on spatial predicate functions, such as `ST_Contains`.
+- Fast filtering of lists of objects based on spatial predicate functions such as `ST_Contains`.
 
 - Speeding up joins between spatial and non-spatial data.
 
-It differs from other indexes as follows:
+They differ from other types of indexes as follows:
 
-- Its inner workings are specialized to operate on 2-dimensional `GEOMETRY` and `GEOGRAPHY` data types.
+- Their inner workings are specialized to operate on 2-dimensional `GEOMETRY` and `GEOGRAPHY` data types.  They are stored by CockroachDB as a special type of [inverted index](inverted-indexes.html).  For more details, see [Index storage](#index-storage) below.
 
-- It is stored by CockroachDB as a special type of [inverted index](inverted-indexes.html).  For more details, see [How CockroachDB's spatial indexing works](#how-cockroachdbs-spatial-indexing-works) below.
+- They can be tuned to store looser or tighter coverings of the shapes being indexed, depending on the needs of your application.  Tighter coverings are more expensive to generate and store (and update), but perform better because they return fewer false positives during the initial index lookup.  For more information, see [Tuning spatial indexes](#tuning-spatial-indexes) below.
 
 ## How CockroachDB's spatial indexing works
 
-At a high level, CockroachDB takes a "divide the space" approach to spatial indexing that works by decomposing the space being indexed into buckets of various sizes.  This approach is necessary to preserve CockroachDB's ability to scale horizontally.
+### Overview
 
-CockroachDB uses the [S2 geometry library](https://s2geometry.io/) to divide the space being indexed into a [quadtree](https://en.wikipedia.org/wiki/Quadtree) data structure with a set number of levels and a data-independent shape. Each node in the quad tree (really, S2 cell) represents some part of the indexed space and is divided once horizontally and once vertically to produce 4 child cells in the next level. The nodes are numbered using a [Hilbert space-filling curve](https://en.wikipedia.org/wiki/Hilbert_curve) which preserves locality; the leaf nodes of the quadtree measure 1cm across the Earth's surface.  This means that spatial accuracy of your indexes is tunable down to 1cm (with tradeoffs of accuracy vs. speed during index creation -- see below).
+There are two main approaches to building geospatial indexes:
 
-This is easier to understand with pictures.  At a high level, we enclose the sphere into a cube.  Each face of the cube is a square.  We then map from points on that square to points on the face of the sphere.  As you can see in the picture below, there is a projection that occurs.  In the picture, the lines entering from the left are "refracted" by the material of the cube face and are projected onto the surface of the sphere.  This projection reduces the distortion that would occur if the points on the cube face were projected directly onto the sphere in a straight line.
+- One approach is to "divide the objects". This works by inserting the objects into a tree (usually a balanced tree such as an [R-tree](https://en.wikipedia.org/wiki/R-tree)) whose shape depends on the data being indexed.
 
-<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-2d.png' | relative_url }}" alt="S2 Cubed Sphere - 2D">
+- The other approach is to "divide the space". This works by creating a decomposition of the space being indexed into buckets of various sizes.
 
-Next let's expand the image to 3 dimensions, to show the cube and sphere more clearly.  Above, we mentioned that each cube face is mapped to a quadtree data structure.  The nodes of each quadtree are numbered using a Hilbert space-filling curve.  In the image below, you can imagine that the points on the Hilbert curve on the rear face of the cube are projected onto the sphere in the center.
+Whichever approach to indexing is used, when an object is indexed, a "covering" shape (e.g. a bounding box) is constructed that completely encompasses the indexed object. Index queries work by looking for containment or intersection between the covering shape for the query object and the indexed covering shapes. This retrieves false positives but no false negatives.
 
-<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-3d.png' | relative_url }}" alt="S2 Cubed Sphere - 3D">
+CockroachDB takes the "divide the space" approach to spatial indexing.  This is necessary to preserve CockroachDB's ability to [scale horizontally](frequently-asked-questions.html#how-does-cockroachdb-scale) by [adding nodes to a running cluster](cockroach-start.html#add-a-node-to-a-cluster).
 
-When indexing an object, a covering is computed using some number of the cells in the quadtree. The number of covering cells can vary per indexed object by passing special arguments to [`CREATE INDEX`](create-index.html) that tell CockroachDB how many levels of s2 cells to use.
-
-There is an important tradeoff in the number of cells used to represent an object in the index: fewer cells use less space but create a looser covering. A looser covering retrieves more false positives from the index, which is expensive because the exact answer computation that's run after the index query is expensive. However, at some point the benefits of retrieving fewer false positives is outweighed by how long it takes to scan a large index.
-
-The size of a large index also matters if the table is accepting a lot of writes.
-
-
-
-Advantages of CockroachDB's "divide the space" approach to spatial indexing include:
+Advantages of the divide the space approach include:
 
 + Easy to scale horizontally.
 + No balancing operations are required, unlike [R-tree indexes](https://en.wikipedia.org/wiki/R-tree).
 + Inserts require no locking.
 + Bulk ingest is simpler to implement than other approaches.
-+ Allows a per-object tradeoff between index size and false positives during index creation.
++ Allows a per-object tradeoff between index size and false positives during index creation.  (See [Tuning spatial indexes](#tuning-spatial-indexes) below.)
 
-Disadvantages of the "divide the space" approach include:
+Disadvantages of "divide the space" include:
 
-+ Does not support indexing infinite {{GEOMETRY}} types. Because the space is divided beforehand, it must be finite. This means that CockroachDB's spatial indexing works for (spherical) {{GEOGRAPHY}} and for finite {{GEOMETRY}} (planar) but not for infinite {{GEOMETRY}}.
-+ Includes more false positives in the index by default, which must then be filtered out by the SQL execution layer.  This filtering can be slow, and thus tuning spatial indexes becomes more important to get good performance.
++ It does not support indexing infinite `GEOMETRY` types. Because the space is divided beforehand, it must be finite. This means that CockroachDB's spatial indexing works for `GEOGRAPHY` (spherical) and for finite `GEOMETRY` (planar) objects, but not for infinite `GEOMETRY`.
++ Includes more false positives in the index by default, which must then be filtered out by the SQL execution layer.  This filtering can reduce performance, and thus [tuning spatial indexes](#tuning-spatial-indexes) becomes more important to get good performance.
+
+### Details
+
+Under the hood, CockroachDB uses the [S2 geometry library](https://s2geometry.io/) to divide the space being indexed into a [quadtree](https://en.wikipedia.org/wiki/Quadtree) data structure with a set number of levels and a data-independent shape. Each node in the quad tree (really, [S2 cell](https://s2geometry.io/devguide/s2cell_hierarchy.html)) represents some part of the indexed space and is divided once horizontally and once vertically to produce 4 child cells in the next level.
+
+The leaf nodes of the quadtree measure 1cm across the Earth's surface.  This means that, depending on the shapes you are working with, you can tune the spatial accuracy of your indexes down to 1cm (with tradeoffs -- see [Tuning spatial indexes](#tuning-spatial-indexes) below).
+
+The nodes in the tree are numbered using a [Hilbert space-filling curve](https://en.wikipedia.org/wiki/Hilbert_curve) which preserves locality of reference.  In other words, two points that are near each other geometrically are likely to be near each other in the quadtree, which is good for performance.
+
+Visually, you can think of the S2 library as enclosing a sphere in a cube as shown in the image below.  We map from points on each face of the cube to points on the face of the sphere.  As you can see in the picture below, there is a projection that occurs in this mapping: the lines entering from the left are "refracted" by the material of the cube face before touching the surface of the sphere.  This projection reduces the distortion that would occur if the points on the cube face were projected directly onto the sphere in a straight line.
+
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-2d.png' | relative_url }}" alt="S2 Cubed Sphere - 2D">
+
+Next, let's expand the image to 3 dimensions, to show the cube and sphere more clearly.  As mentioned above, each cube face is mapped to the quadtree data structure, and each node of the quadtree is numbered using a Hilbert space-filling curve.  In the image below, you can imagine how the points on the Hilbert curve on the rear face of the cube are projected onto the sphere in the center.
+
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-cubed-sphere-3d.png' | relative_url }}" alt="S2 Cubed Sphere - 3D">
+
+XXX: YOU ARE HERE
+
+When you index a spatial object, a covering is computed using some number of the cells in the quadtree. The number of covering cells can vary per indexed object by passing special arguments to `CREATE INDEX` that tell CockroachDB how many levels of s2 cells to use.  For more information about these tuning parameters, see [Tuning spatial indexes](#tuning-spatial-indexes).
+
+## Tuning spatial indexes
+
+When an object is indexed, a "covering" shape (e.g. a bounding box) is constructed that completely encompasses the indexed object. Index queries work by looking for containment or intersection between the covering shape for the query object and the indexed covering shapes. This retrieves false positives but no false negatives.
+
+This leads to an important tradeoff when creating spatial indexes.  The number of cells used to represent an object in the index is tunable fewer cells use less space but create a looser covering. A looser covering retrieves more false positives from the index, which is expensive because the exact answer computation that's run after the index query is expensive. However, at some point the benefits of retrieving fewer false positives is outweighed by how long it takes to scan a large index.
+
+The size of the large index that is created for a tighter covering also matters if the table is accepting a lot of writes.  If the table is accepting more frequent writes, the (larger) index will need to be updated more frequently.
+
+Let's look at a concrete example.
+
+XXX: YOU ARE HERE
+
+The following geometry object that describes a polygon whose vertices are some small cities in the Northeastern US:
+
+~~~
+'LINESTRING(-76.4955 42.4405,  -75.6608 41.4102,-73.5422 41.052, -73.929 41.707, -76.4955 42.4405)'
+~~~
+
+The animated image below shows the s2 covering that is generated as we "turn up the dial" on the `s2_max_level` and `s2_max_cells` parameters, ranging them from 1 to 30:
+
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-coverings.gif' | relative_url }}" alt="Animated GIF of S2 Coverings - Levels 1 to 30">
+
+Here are the same images, presented in a grid.  You can see that as we turn up the `s2_max_cells` parameter, more work is done to discover a tighter and tighter covering (using fewer and smaller cells):
+
+<img style="display: block; margin-left: auto; margin-right: auto; width: 50%" src="{{ 'images/v20.2/geospatial/s2-coverings-tiled.png' | relative_url }}" alt="Static image of S2 Coverings - Levels 1 to 30">
 
 ## Index storage
 
@@ -73,7 +111,7 @@ As such, a row in the index might look
 | 'POINT(-74.147896 41.679517)' | geom1, geom2, ...        |
 | 'LINESTRING()'                | geom3, geom4, geom5, ... |
 
-To control how many duplicates occur in the list of values, you can configure the index to use more or fewer s2 cells with the `s2_max_level` and `s2_max_cells` arguments to `CREATE INDEX` (see the examples below).
+To control how many duplicates occur in the list of values (and thus how many false positives will be returned by an index lookup), you can configure the index to use more or fewer s2 cells with the `s2_max_level` and `s2_max_cells` arguments to `CREATE INDEX` (see [Spatial index tuning](#spatial-index-tuning) below).
 
 ## Examples
 
@@ -90,19 +128,19 @@ To create a spatial index on a `GEOMETRY` data type, enter the following stateme
 CREATE INDEX geom_idx_1 ON some_spatial_table USING GIST(geom) WITH (s2_level_mod=3);
 ~~~
 
-### Spatial index options
+### Spatial index tuning
 
 The following keyword options to [`CREATE INDEX`](create-index.html) are supported:
 
-| Option         | Value | Meaning |
-|----------------+-------+---------|
-| s2_level_mod   |     3 |         |
-| s2_max_level   |    15 |         |
-| s2_max_cells   |       |         |
-| geometry_min_x |       |         |
-| geometry_max_x |       |         |
-| geometry_min_y |       |         |
-| geometry_max_y |       |         |
+| Option         | Default value | Meaning                                                                                                                                                                |
+|----------------+---------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| s2_level_mod   |             1 |                                                                                                                                                                        |
+| s2_max_level   |            30 |                                                                                                                                                                        |
+| s2_max_cells   |             4 | A limit on how much work is done exploring the possible covering.  Defaults to 8.  You may want to use higher values for odd-shaped regions such as skinny rectangles. |
+| geometry_min_x |               |                                                                                                                                                                        |
+| geometry_max_x |               |                                                                                                                                                                        |
+| geometry_min_y |               |                                                                                                                                                                        |
+| geometry_max_y |               |                                                                                                                                                                        |
 
 Here is an example showing all of the options being set:
 
